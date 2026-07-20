@@ -43,20 +43,22 @@ func main() {
 
 	// Repositories
 	entityRepo := repository.NewEntityRepo(mongoDB)
+	entityRepo.EnsureIndexes(context.Background())
 	deviationRepo := repository.NewDeviationRepo(mongoDB)
 
-	// Ingestion pipeline
+	// Ingestion pipelines
 	pipeline := ingestion.NewPipeline(entityRepo, cfg.IngestParserPath, cfg.WorkspaceDir)
+	docPipeline := ingestion.NewDocPipeline(entityRepo)
 
 	// NATS (optional)
 	var nc *nats.Conn
 	var natsHandler *kh.Handler
 	if ncConn, err := nats.Connect(cfg.NATSURL); err != nil {
 		log.Printf("NATS not available — continuing without: %v", cfg.NATSURL, err)
-		natsHandler, _ = kh.NewHandler(nil, entityRepo, pipeline)
+		natsHandler, _ = kh.NewHandler(nil, entityRepo, pipeline, docPipeline)
 	} else {
 		nc = ncConn
-		natsHandler, err = kh.NewHandler(nc, entityRepo, pipeline)
+		natsHandler, err = kh.NewHandler(nc, entityRepo, pipeline, docPipeline)
 		if err != nil {
 			log.Fatalf("Failed to create NATS handler: %v", err)
 		}
@@ -81,6 +83,7 @@ func main() {
 		AllowCredentials: true,
 		MaxAge:           300,
 	}))
+	r.Use(handlers.AuthMiddleware)
 
 	// Health
 	r.Get("/health", func(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +95,8 @@ func main() {
 	// Register handlers
 	handlers.NewKnowledgeHandler(entityRepo).Routes(r)
 	handlers.NewDeviationHandler(deviationRepo).Routes(r)
-	handlers.NewIngestionHandler(pipeline).Routes(r)
+	handlers.NewIngestionHandler(pipeline, docPipeline, mongoDB).Routes(r)
+	handlers.NewOnboardingHandler(mongoDB).Routes(r)
 
 	// Server
 	addr := fmt.Sprintf(":%d", cfg.Port)

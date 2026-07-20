@@ -36,7 +36,7 @@ func (r *DeviationRepo) GetByID(ctx context.Context, id string) (*models.Deviati
 }
 
 func (r *DeviationRepo) List(ctx context.Context, companyID string) ([]models.Deviation, error) {
-	cur, err := r.coll.Find(ctx, bson.M{"company_id": companyID})
+	cur, err := r.coll.Find(ctx, bson.M{"companyId": companyID})
 	if err != nil { return nil, err }
 	defer cur.Close(ctx)
 	var results []models.Deviation
@@ -46,16 +46,16 @@ func (r *DeviationRepo) List(ctx context.Context, companyID string) ([]models.De
 }
 
 func (r *DeviationRepo) Update(ctx context.Context, id string, updates map[string]any) error {
-	updates["updated_at"] = time.Now().UTC()
+	updates["updatedAt"] = time.Now().UTC()
 	_, err := r.coll.UpdateOne(ctx, bson.M{"_id": id}, bson.M{"$set": updates})
 	return err
 }
 
 func (r *DeviationRepo) Stats(ctx context.Context, companyID string) (*models.DeviationStats, error) {
-	filter := bson.M{"company_id": companyID}
+	filter := bson.M{"companyId": companyID}
 	total, _ := r.coll.CountDocuments(ctx, filter)
-	open, _ := r.coll.CountDocuments(ctx, bson.M{"company_id": companyID, "status": "pending_review"})
-	resolved, _ := r.coll.CountDocuments(ctx, bson.M{"company_id": companyID, "status": "resolved"})
+	open, _ := r.coll.CountDocuments(ctx, bson.M{"companyId": companyID, "status": "pending_review"})
+	resolved, _ := r.coll.CountDocuments(ctx, bson.M{"companyId": companyID, "status": "resolved"})
 
 	// By status
 	statusCur, _ := r.coll.Aggregate(ctx, bson.A{

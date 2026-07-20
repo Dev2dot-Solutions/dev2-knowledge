@@ -29,7 +29,7 @@ func (h *DeviationHandler) Routes(r chi.Router) {
 }
 
 func (h *DeviationHandler) List(w http.ResponseWriter, r *http.Request) {
-	companyID := r.URL.Query().Get("company_id")
+	companyID := r.URL.Query().Get("companyId")
 	if !IsValidUUID(companyID) { respondError(w, http.StatusBadRequest, "invalid company_id"); return }
 	results, err := h.repo.List(r.Context(), companyID)
 	if err != nil { respondError(w, http.StatusInternalServerError, "list failed"); return }
@@ -45,7 +45,7 @@ func (h *DeviationHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *DeviationHandler) Stats(w http.ResponseWriter, r *http.Request) {
-	companyID := r.URL.Query().Get("company_id")
+	companyID := r.URL.Query().Get("companyId")
 	if !IsValidUUID(companyID) { respondError(w, http.StatusBadRequest, "invalid company_id"); return }
 	stats, err := h.repo.Stats(r.Context(), companyID)
 	if err != nil { respondError(w, http.StatusInternalServerError, "stats failed"); return }
@@ -54,9 +54,9 @@ func (h *DeviationHandler) Stats(w http.ResponseWriter, r *http.Request) {
 
 func (h *DeviationHandler) Resolve(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	var body struct { Resolution string `json:"resolution"`; ResolvedBy string `json:"resolved_by"` }
+	var body struct { Resolution string `json:"resolution"`; ResolvedBy string `json:"resolvedBy"` }
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil { respondError(w, http.StatusBadRequest, "invalid body"); return }
-	if err := h.repo.Update(r.Context(), id, map[string]any{"status": "resolved", "resolution": body.Resolution, "resolved_by": body.ResolvedBy}); err != nil {
+	if err := h.repo.Update(r.Context(), id, map[string]any{"status": "resolved", "resolution": body.Resolution, "resolvedBy": body.ResolvedBy}); err != nil {
 		respondError(w, http.StatusInternalServerError, "resolve failed"); return
 	}
 	respondJSON(w, http.StatusOK, map[string]string{"status": "resolved"})

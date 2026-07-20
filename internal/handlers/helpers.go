@@ -19,3 +19,8 @@ func respondJSON(w http.ResponseWriter, status int, payload any) {
 func respondError(w http.ResponseWriter, status int, msg string) {
 	respondJSON(w, status, map[string]string{"error": msg})
 }
+
+// respondErrorCode writes an error with a machine-readable code and a human-readable message.
+func respondErrorCode(w http.ResponseWriter, status int, code, msg string) {
+	respondJSON(w, status, map[string]string{"error": code, "message": msg})
+}

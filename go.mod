@@ -8,6 +8,8 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/nats-io/nats.go v1.36.0
 	go.mongodb.org/mongo-driver v1.16.0
+	golang.org/x/net v0.21.0
+	github.com/golang-jwt/jwt/v5 v5.2.1
 )
 
 require (

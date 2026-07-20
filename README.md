@@ -1,6 +1,6 @@
 # dev2-knowledge
 
-Knowledge graph, code ingestion, deviation tracking, and onboarding service.
+Knowledge graph, code ingestion, online documentation ingestion, deviation tracking, and onboarding service.
 
 A Go microservice that owns all knowledge graph entities (conventions, business
 rules, domain terms, architecture decisions, processes, repos, files, functions,
@@ -43,6 +43,7 @@ the onboarding flow.
 | PATCH | /deviations/{id}/resolve | Resolve deviation |
 | POST | /ingest/start | Trigger code ingestion |
 | GET | /ingest/status | Ingestion status |
+| POST | /ingest/online-doc | Ingest documentation from a URL (stores as ExternalDoc) |
 
 ## NATS Subjects
 
@@ -54,6 +55,8 @@ the onboarding flow.
 | knowledge.ingest | Request-reply | Trigger repo ingestion |
 | knowledge.link | Fire-and-forget | Link ticket to knowledge graph |
 | knowledge.ingested | Event | Ingestion complete notification |
+| knowledge.doc.ingest | Request-reply | Trigger online doc ingestion from URL |
+| knowledge.doc.ingested | Event | Doc ingestion complete notification |
 
 ## Configuration
 

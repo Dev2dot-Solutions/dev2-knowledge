@@ -3,7 +3,7 @@ package models
 // KnowledgeSearchRequest is received via NATS for knowledge.search.
 type KnowledgeSearchRequest struct {
 	Query     string   `json:"query"`
-	CompanyID string   `json:"company_id"`
+	CompanyID string   `json:"companyId"`
 	Types     []string `json:"types,omitempty"`
 	Limit     int      `json:"limit,omitempty"`
 }
@@ -12,7 +12,7 @@ type KnowledgeSearchRequest struct {
 type KnowledgeEntityGetRequest struct {
 	Type      string `json:"type"`
 	ID        string `json:"id"`
-	CompanyID string `json:"company_id,omitempty"`
+	CompanyID string `json:"companyId,omitempty"`
 }
 
 // KnowledgeEntityResolveRequest is received via NATS for knowledge.entity.resolve.
@@ -31,18 +31,18 @@ type KnowledgeEntityResolveResponse struct {
 
 // KnowledgeLinkRequest is received via NATS for knowledge.link (from dev2-tickets).
 type KnowledgeLinkRequest struct {
-	TicketID    string `json:"ticket_id"`
+	TicketID    string `json:"ticketId"`
 	Title       string `json:"title"`
 	Description string `json:"description,omitempty"`
-	CompanyID   string `json:"company_id"`
+	CompanyID   string `json:"companyId"`
 }
 
 // KnowledgeIngestRequest is received via NATS for knowledge.ingest.
 type KnowledgeIngestRequest struct {
-	CompanyID string `json:"company_id"`
-	RepoName  string `json:"repo_name"`
-	RepoURL   string `json:"repo_url,omitempty"`
-	LocalPath string `json:"local_path"`
+	CompanyID string `json:"companyId"`
+	RepoName  string `json:"repoName"`
+	RepoURL   string `json:"repoUrl,omitempty"`
+	LocalPath string `json:"localPath"`
 	Language  string `json:"language,omitempty"`
 	Framework string `json:"framework,omitempty"`
 }

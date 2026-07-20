@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/Dev2dot-Solutions/dev2-knowledge/internal/models"
@@ -30,25 +31,25 @@ type ParseResult struct {
 type ParseFunction struct {
 	Name       string  `json:"name"`
 	Signature  string  `json:"signature"`
-	LineStart  int     `json:"line_start"`
-	LineEnd    int     `json:"line_end"`
-	DocComment *string `json:"doc_comment"`
+	LineStart  int     `json:"lineStart"`
+	LineEnd    int     `json:"lineEnd"`
+	DocComment *string `json:"docComment"`
 }
 
 type ParseClass struct {
 	Name        string   `json:"name"`
-	ParentClass *string  `json:"parent_class"`
+	ParentClass *string  `json:"parentClass"`
 	Interfaces  []string `json:"interfaces"`
 }
 
 type ParseImport struct {
-	SourceEntity string `json:"source_entity"`
-	TargetEntity string `json:"target_entity"`
+	SourceEntity string `json:"sourceEntity"`
+	TargetEntity string `json:"targetEntity"`
 }
 
 type ParseCall struct {
-	CallerName string `json:"caller_name"`
-	CalleeName string `json:"callee_name"`
+	CallerName string `json:"callerName"`
+	CalleeName string `json:"calleeName"`
 }
 
 type Pipeline struct {
@@ -77,7 +78,7 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 	parseableExts := map[string]string{
 		".ts": "typescript", ".tsx": "tsx", ".js": "javascript", ".jsx": "javascript",
 		".mjs": "javascript", ".cjs": "javascript", ".mts": "typescript", ".cts": "typescript",
-		".kt": "kotlin", ".kts": "kotlin", ".go": "go",
+		".kt": "kotlin", ".kts": "kotlin", ".go": "go", ".vue": "vue", ".rs": "rust",
 		".html": "html", ".htm": "html", ".css": "css", ".scss": "css",
 	}
 
@@ -90,6 +91,13 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 		}
 		return nil
 	})
+
+	// 2b. Ingest markdown documentation (READMEs, docs-only repos)
+	docsCount, err := p.ingestMarkdown(ctx, companyID, repoName, localPath)
+	if err != nil {
+		log.Printf("[ingestion] markdown ingestion error: %v", err)
+	}
+	result.DocsFound = docsCount
 
 	if len(files) == 0 {
 		result.DurationMs = time.Since(start).Milliseconds()
@@ -112,7 +120,8 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 
 		// Create file record
 		if err := p.entityRepo.Create(ctx, "files", map[string]any{
-			"_id": fileID, "repo_id": repoID, "path": pr.Path, "language": filepath.Ext(pr.Path),
+			"_id": fileID, "repoId": repoID, "path": pr.Path, "language": filepath.Ext(pr.Path),
+			"companyId": companyID, "repoName": repoName,
 		}); err != nil {
 			result.Errors = append(result.Errors, fmt.Sprintf("%s: %v", pr.Path, err))
 			result.FilesFailed++
@@ -124,8 +133,9 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 		for _, fn := range pr.Functions {
 			fnID := uuid.New().String()
 			if err := p.entityRepo.Create(ctx, "functions", map[string]any{
-				"_id": fnID, "file_id": fileID, "name": fn.Name, "signature": fn.Signature,
-				"line_start": fn.LineStart, "line_end": fn.LineEnd, "doc_comment": fn.DocComment,
+				"_id": fnID, "fileId": fileID, "name": fn.Name, "signature": fn.Signature,
+				"lineStart": fn.LineStart, "lineEnd": fn.LineEnd, "docComment": fn.DocComment,
+				"companyId": companyID, "repoName": repoName,
 			}); err != nil {
 				continue
 			}
@@ -134,8 +144,9 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 
 			// FileContains relationship
 			relationships = append(relationships, map[string]any{
-				"_id": uuid.New().String(), "file_id": fileID,
-				"contained_entity_type": "function", "contained_entity_id": fnID,
+				"_id": uuid.New().String(), "fileId": fileID,
+				"containedEntityType": "function", "containedEntityId": fnID,
+				"companyId": companyID, "repoName": repoName,
 			})
 		}
 
@@ -143,15 +154,17 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 		for _, cls := range pr.Classes {
 			clsID := uuid.New().String()
 			if err := p.entityRepo.Create(ctx, "classes", map[string]any{
-				"_id": clsID, "file_id": fileID, "name": cls.Name,
-				"parent_class": cls.ParentClass, "interfaces": cls.Interfaces,
+				"_id": clsID, "fileId": fileID, "name": cls.Name,
+				"parentClass": cls.ParentClass, "interfaces": cls.Interfaces,
+				"companyId": companyID, "repoName": repoName,
 			}); err != nil {
 				continue
 			}
 			result.ClassesFound++
 			relationships = append(relationships, map[string]any{
-				"_id": uuid.New().String(), "file_id": fileID,
-				"contained_entity_type": "class", "contained_entity_id": clsID,
+				"_id": uuid.New().String(), "fileId": fileID,
+				"containedEntityType": "class", "containedEntityId": clsID,
+				"companyId": companyID, "repoName": repoName,
 			})
 		}
 
@@ -159,8 +172,9 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 		for _, imp := range pr.Imports {
 			if imp.SourceEntity == "" && imp.TargetEntity == "" { continue }
 			p.entityRepo.Create(ctx, "imports", map[string]any{
-				"_id": uuid.New().String(), "file_id": fileID,
-				"source_entity": imp.SourceEntity, "target_entity": imp.TargetEntity,
+				"_id": uuid.New().String(), "fileId": fileID,
+				"sourceEntity": imp.SourceEntity, "targetEntity": imp.TargetEntity,
+				"companyId": companyID, "repoName": repoName,
 			})
 			result.ImportsFound++
 		}
@@ -179,7 +193,8 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 			}
 			if calleeID == "" || callerID == calleeID { continue }
 			if err := p.entityRepo.Create(ctx, "function_calls", map[string]any{
-				"_id": uuid.New().String(), "caller_function_id": callerID, "callee_function_id": calleeID,
+				"_id": uuid.New().String(), "callerFunctionId": callerID, "calleeFunctionId": calleeID,
+				"companyId": companyID, "repoName": repoName,
 			}); err != nil {
 				continue
 			}
@@ -201,11 +216,99 @@ func (p *Pipeline) IngestRepository(ctx context.Context, companyID, repoName, re
 	return result, nil
 }
 
+// ingestMarkdown walks the repo for Markdown files and stores each as an
+// ExternalDoc (sourceType=markdown) so READMEs and docs-only repos become
+// searchable knowledge. Returns the number of documents stored.
+func (p *Pipeline) ingestMarkdown(ctx context.Context, companyID, repoName, localPath string) (int, error) {
+	skipDirs := map[string]bool{
+		".git": true, "node_modules": true, "vendor": true,
+		"dist": true, "target": true, ".nuxt": true, ".next": true,
+	}
+	var mdFiles []string
+	filepath.Walk(localPath, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return nil
+		}
+		if info.IsDir() {
+			if skipDirs[info.Name()] {
+				return filepath.SkipDir
+			}
+			return nil
+		}
+		ext := strings.ToLower(filepath.Ext(path))
+		if ext == ".md" || ext == ".markdown" {
+			mdFiles = append(mdFiles, path)
+		}
+		return nil
+	})
+
+	count := 0
+	for _, path := range mdFiles {
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Printf("[ingestion] markdown read failed %s: %v", path, err)
+			continue
+		}
+		body := string(data)
+		rel, err := filepath.Rel(localPath, path)
+		if err != nil {
+			rel = path
+		}
+
+		title := ""
+		var hierarchy []string
+		scanner := bufio.NewScanner(strings.NewReader(body))
+		for scanner.Scan() {
+			line := strings.TrimSpace(scanner.Text())
+			if strings.HasPrefix(line, "#") {
+				heading := strings.TrimSpace(strings.TrimLeft(line, "#"))
+				if heading == "" {
+					continue
+				}
+				if title == "" {
+					title = heading
+				}
+				hierarchy = append(hierarchy, heading)
+				if len(hierarchy) >= 20 {
+					break
+				}
+			}
+		}
+		if title == "" {
+			title = strings.TrimSuffix(filepath.Base(path), filepath.Ext(path))
+		}
+
+		now := time.Now().UTC()
+		doc := map[string]any{
+			"_id":        uuid.New().String(),
+			"companyId": companyID,
+			"repoName":  repoName,
+			"url":       "repo://" + repoName + "/" + filepath.ToSlash(rel),
+			"title":     title,
+			"sourceType": "markdown",
+			"body":       body,
+			"sectionHierarchy": hierarchy,
+			"lastFetchedAt":    now,
+			"createdAt":        now,
+			"updatedAt":        now,
+		}
+		if err := p.entityRepo.Create(ctx, "external_docs", doc); err != nil {
+			log.Printf("[ingestion] markdown store failed %s: %v", rel, err)
+			continue
+		}
+		count++
+	}
+	if count > 0 {
+		log.Printf("[ingestion] stored %d markdown docs for %s/%s", count, companyID, repoName)
+	}
+	return count, nil
+}
+
 func (p *Pipeline) ensureRepo(ctx context.Context, companyID, name, url, lang, framework string) (string, error) {
 	// Simple check: create every time (idempotent enough for now)
 	id := uuid.New().String()
 	err := p.entityRepo.Create(ctx, "repos", map[string]any{
-		"_id": id, "company_id": companyID, "name": name, "url": url,
+		"_id": id, "companyId": companyID, "name": name, "url": url,
 		"language": lang, "framework": framework,
 	})
 	if err != nil {
@@ -222,9 +325,9 @@ func (p *Pipeline) runSidecar(files []string) ([]ParseResult, error) {
 		return nil, fmt.Errorf("stdin pipe: %w", err)
 	}
 
-	var stdout bytes.Buffer
+	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
-	cmd.Stderr = os.Stderr
+	cmd.Stderr = &stderr
 
 	if err := cmd.Start(); err != nil {
 		return nil, fmt.Errorf("start sidecar: %w", err)
@@ -238,7 +341,11 @@ func (p *Pipeline) runSidecar(files []string) ([]ParseResult, error) {
 	stdin.Close()
 
 	if err := cmd.Wait(); err != nil {
-		return nil, fmt.Errorf("sidecar wait: %w", err)
+		detail := strings.TrimSpace(stderr.String())
+		if len(detail) > 500 {
+			detail = detail[:500]
+		}
+		return nil, fmt.Errorf("sidecar wait: %w: %s", err, detail)
 	}
 
 	var results []ParseResult
