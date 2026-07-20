@@ -97,6 +97,7 @@ func main() {
 	handlers.NewDeviationHandler(deviationRepo).Routes(r)
 	handlers.NewIngestionHandler(pipeline, docPipeline, mongoDB).Routes(r)
 	handlers.NewOnboardingHandler(mongoDB).Routes(r)
+	handlers.NewWorkspaceHandler(cfg.WorkspaceDir).Routes(r)
 
 	// Server
 	addr := fmt.Sprintf(":%d", cfg.Port)
