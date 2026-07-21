@@ -48,7 +48,7 @@ func (h *WorkspaceHandler) ListTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dirPath, err := h.resolvePath(companyID, relPath)
+	dirPath, err := h.resolvePath(companyID, projectID, relPath)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -137,7 +137,7 @@ func (h *WorkspaceHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath, err := h.resolvePath(companyID, relPath)
+	fullPath, err := h.resolvePath(companyID, projectID, relPath)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -206,7 +206,7 @@ func (h *WorkspaceHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath, err := h.resolvePath(req.CompanyID, req.Path)
+	fullPath, err := h.resolvePath(req.CompanyID, req.ProjectID, req.Path)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -231,22 +231,42 @@ func (h *WorkspaceHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 }
 
 // ---------------------------------------------------------------------------
-// Path resolution with traversal protection
-//
-// The knowledge service clones repos to:
-//   {workspaceDir}/{companyId}/{repoName}
-// ProjectId is NOT part of the filesystem path — it is used for filtering
+// Path resolution with traversal protection.
+// Repos are stored under project-scoped directories:
+//   {workspaceDir}/{companyId}/{projectId}/repos/{repoName} — it is used for filtering
 // at the tree root level via the `repos` query parameter.
 // ---------------------------------------------------------------------------
 
-func (h *WorkspaceHandler) resolvePath(companyID, relPath string) (string, error) {
-	wsRoot := filepath.Join(h.workspaceDir, companyID)
-	targetPath := filepath.Join(wsRoot, relPath)
+// resolvePath resolves a path against the workspace.
+// Strategy: try the project-scoped path first
+//   {workspaceDir}/{companyId}/{projectId}/repos/{relPath}
+// If that directory doesn't exist, fall back to the flat company-level path
+//   {workspaceDir}/{companyId}/{relPath}
+// The fallback supports repos cloned before the project-scoped structure was
+// introduced. The repos filter param at the tree root handles project binding.
+func (h *WorkspaceHandler) resolvePath(companyID, projectID, relPath string) (string, error) {
+	wsRoot := filepath.Join(h.workspaceDir, companyID, projectID)
+	targetPath := filepath.Join(wsRoot, "repos", relPath)
 	cleaned := filepath.Clean(targetPath)
 	absRoot, _ := filepath.Abs(wsRoot)
 	absTarget, _ := filepath.Abs(cleaned)
 	if !strings.HasPrefix(absTarget, absRoot) {
 		return "", os.ErrNotExist
 	}
+
+	// Fallback: if project-scoped directory doesn't exist, try flat company-level
+	if _, err := os.Stat(cleaned); os.IsNotExist(err) {
+		flatRoot := filepath.Join(h.workspaceDir, companyID)
+		flatPath := filepath.Join(flatRoot, relPath)
+		flatCleaned := filepath.Clean(flatPath)
+		flatAbs, _ := filepath.Abs(flatRoot)
+		flatTarget, _ := filepath.Abs(flatCleaned)
+		if strings.HasPrefix(flatTarget, flatAbs) {
+			if _, flatErr := os.Stat(flatCleaned); flatErr == nil {
+				return flatCleaned, nil
+			}
+		}
+	}
+
 	return cleaned, nil
 }
