@@ -23,7 +23,7 @@ func NewWorkspaceHandler(workspaceDir string) *WorkspaceHandler {
 
 func (h *WorkspaceHandler) Routes(r chi.Router) {
 	r.Route("/workspace", func(r chi.Router) {
-		r.Get("/tree", h.ListTree)    // GET /workspace/tree?companyId=&projectId=&path=
+		r.Get("/tree", h.ListTree)    // GET /workspace/tree?companyId=&projectId=&path=&repos=
 		r.Get("/file", h.ReadFile)    // GET /workspace/file?companyId=&projectId=&path=
 		r.Put("/file", h.WriteFile)   // PUT /workspace/file
 	})
@@ -37,6 +37,8 @@ func (h *WorkspaceHandler) ListTree(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("companyId")
 	projectID := r.URL.Query().Get("projectId")
 	relPath := r.URL.Query().Get("path")
+	reposFilter := r.URL.Query().Get("repos") // comma-separated repo names
+
 	if relPath == "" {
 		relPath = "."
 	}
@@ -46,7 +48,7 @@ func (h *WorkspaceHandler) ListTree(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	dirPath, err := h.resolvePath(companyID, projectID, relPath)
+	dirPath, err := h.resolvePath(companyID, relPath)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -69,9 +71,26 @@ func (h *WorkspaceHandler) ListTree(w http.ResponseWriter, r *http.Request) {
 	}
 
 	items := make([]TreeItem, 0, len(entries))
+
+	// Parse the repo filter list (for root-level filtering)
+	var allowedRepos map[string]bool
+	if relPath == "." && reposFilter != "" {
+		allowedRepos = make(map[string]bool)
+		for _, r := range strings.Split(reposFilter, ",") {
+			r = strings.TrimSpace(r)
+			if r != "" {
+				allowedRepos[r] = true
+			}
+		}
+	}
+
 	for _, e := range entries {
-		// Skip .git directories at the top level for cleaner tree
+		// Skip .git directories at the top level
 		if e.Name() == ".git" && relPath == "." {
+			continue
+		}
+		// At root level, filter by project's repo list if provided
+		if relPath == "." && allowedRepos != nil && !allowedRepos[e.Name()] {
 			continue
 		}
 		info, _ := e.Info()
@@ -118,7 +137,7 @@ func (h *WorkspaceHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath, err := h.resolvePath(companyID, projectID, relPath)
+	fullPath, err := h.resolvePath(companyID, relPath)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -187,7 +206,7 @@ func (h *WorkspaceHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fullPath, err := h.resolvePath(req.CompanyID, req.ProjectID, req.Path)
+	fullPath, err := h.resolvePath(req.CompanyID, req.Path)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, err.Error())
 		return
@@ -213,25 +232,21 @@ func (h *WorkspaceHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 
 // ---------------------------------------------------------------------------
 // Path resolution with traversal protection
+//
+// The knowledge service clones repos to:
+//   {workspaceDir}/{companyId}/{repoName}
+// ProjectId is NOT part of the filesystem path — it is used for filtering
+// at the tree root level via the `repos` query parameter.
 // ---------------------------------------------------------------------------
 
-func (h *WorkspaceHandler) resolvePath(companyID, projectID, relPath string) (string, error) {
-	wsRoot := filepath.Join(h.workspaceDir, companyID, projectID)
-
-	var targetPath string
-	if strings.HasPrefix(relPath, "repos/") || strings.HasPrefix(relPath, ".") || relPath == "." {
-		targetPath = filepath.Join(wsRoot, relPath)
-	} else {
-		targetPath = filepath.Join(wsRoot, "repos", relPath)
-	}
-
+func (h *WorkspaceHandler) resolvePath(companyID, relPath string) (string, error) {
+	wsRoot := filepath.Join(h.workspaceDir, companyID)
+	targetPath := filepath.Join(wsRoot, relPath)
 	cleaned := filepath.Clean(targetPath)
-
 	absRoot, _ := filepath.Abs(wsRoot)
 	absTarget, _ := filepath.Abs(cleaned)
 	if !strings.HasPrefix(absTarget, absRoot) {
-		return "", os.ErrNotExist // treat traversal as not found
+		return "", os.ErrNotExist
 	}
-
 	return cleaned, nil
 }
