@@ -279,7 +279,7 @@ func setServiceAuth(req *http.Request, fallbackAuthHeader string) {
 func (h *IngestionHandler) ListGitHubRepos(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("companyId")
 	if companyID == "" {
-		respondError(w, http.StatusBadRequest, "company_id is required")
+		respondError(w, http.StatusBadRequest, "companyId is required")
 		return
 	}
 	if !RequireCompanyAccess(w, r, companyID) {
