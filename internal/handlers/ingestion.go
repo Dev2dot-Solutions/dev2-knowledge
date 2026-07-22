@@ -54,6 +54,9 @@ func (h *IngestionHandler) Start(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "company_id and repo_name are required")
 		return
 	}
+	if !RequireCompanyAccess(w, r, req.CompanyID) {
+		return
+	}
 	// Check if repo already exists for this company
 	var existingCount int64
 	if h.mongoDB != nil {
@@ -210,6 +213,16 @@ func (h *IngestionHandler) cloneRepo(ctx context.Context, companyID, repoName, a
 func (h *IngestionHandler) Status(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("companyId")
 
+	// companyId is optional for admins/API-key callers; a scoped JWT caller
+	// without one falls back to their own company.
+	if companyID != "" {
+		if !RequireCompanyAccess(w, r, companyID) {
+			return
+		}
+	} else if !GetIsAdmin(r) {
+		companyID = GetCompanyID(r)
+	}
+
 	type repoStats struct {
 		Name      string                 `json:"name"`
 		Language  string                 `json:"language"`
@@ -267,6 +280,9 @@ func (h *IngestionHandler) ListGitHubRepos(w http.ResponseWriter, r *http.Reques
 	companyID := r.URL.Query().Get("companyId")
 	if companyID == "" {
 		respondError(w, http.StatusBadRequest, "company_id is required")
+		return
+	}
+	if !RequireCompanyAccess(w, r, companyID) {
 		return
 	}
 
@@ -417,6 +433,9 @@ func (h *IngestionHandler) IngestDoc(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.URL == "" || req.CompanyID == "" {
 		respondError(w, http.StatusBadRequest, "url and company_id are required")
+		return
+	}
+	if !RequireCompanyAccess(w, r, req.CompanyID) {
 		return
 	}
 	result, err := h.docPipeline.IngestURL(r.Context(), req)

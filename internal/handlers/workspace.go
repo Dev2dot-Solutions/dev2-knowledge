@@ -47,6 +47,9 @@ func (h *WorkspaceHandler) ListTree(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "companyId and projectId are required")
 		return
 	}
+	if !RequireCompanyAccess(w, r, companyID) {
+		return
+	}
 
 	dirPath, err := h.resolvePath(companyID, projectID, relPath)
 	if err != nil {
@@ -136,6 +139,9 @@ func (h *WorkspaceHandler) ReadFile(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "path is required")
 		return
 	}
+	if !RequireCompanyAccess(w, r, companyID) {
+		return
+	}
 
 	fullPath, err := h.resolvePath(companyID, projectID, relPath)
 	if err != nil {
@@ -203,6 +209,9 @@ func (h *WorkspaceHandler) WriteFile(w http.ResponseWriter, r *http.Request) {
 	}
 	if req.Path == "" {
 		respondError(w, http.StatusBadRequest, "path is required")
+		return
+	}
+	if !RequireCompanyAccess(w, r, req.CompanyID) {
 		return
 	}
 

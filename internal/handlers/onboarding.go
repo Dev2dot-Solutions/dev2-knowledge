@@ -82,6 +82,9 @@ func (h *OnboardingHandler) Start(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "company_id is required")
 		return
 	}
+	if !RequireCompanyAccess(w, r, req.CompanyID) {
+		return
+	}
 
 	// Check for existing in-progress session
 	var existing models.OnboardingSession
@@ -137,6 +140,9 @@ func (h *OnboardingHandler) GetSession(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusNotFound, "session not found")
 		return
 	}
+	if !RequireCompanyAccess(w, r, session.CompanyID) {
+		return
+	}
 
 	respondJSON(w, http.StatusOK, sessionToResponse(session))
 }
@@ -147,6 +153,9 @@ func (h *OnboardingHandler) RunDiscovery(w http.ResponseWriter, r *http.Request)
 	companyID := chi.URLParam(r, "companyId")
 	if !IsValidUUID(companyID) {
 		respondError(w, http.StatusBadRequest, "invalid company_id")
+		return
+	}
+	if !RequireCompanyAccess(w, r, companyID) {
 		return
 	}
 
@@ -189,6 +198,9 @@ func (h *OnboardingHandler) AcceptDiscovery(w http.ResponseWriter, r *http.Reque
 	companyID := chi.URLParam(r, "companyId")
 	if !IsValidUUID(companyID) {
 		respondError(w, http.StatusBadRequest, "invalid company_id")
+		return
+	}
+	if !RequireCompanyAccess(w, r, companyID) {
 		return
 	}
 
@@ -386,6 +398,9 @@ func (h *OnboardingHandler) SubmitAnswer(w http.ResponseWriter, r *http.Request)
 	}
 	if session == nil {
 		respondError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if !RequireCompanyAccess(w, r, session.CompanyID) {
 		return
 	}
 
@@ -611,6 +626,9 @@ func (h *OnboardingHandler) TriggerIngestion(w http.ResponseWriter, r *http.Requ
 		respondError(w, http.StatusNotFound, "session not found")
 		return
 	}
+	if !RequireCompanyAccess(w, r, session.CompanyID) {
+		return
+	}
 
 	result := h.ingestDocuments(r.Context(), session.CompanyID)
 
@@ -623,6 +641,9 @@ func (h *OnboardingHandler) ListFindings(w http.ResponseWriter, r *http.Request)
 	companyID := chi.URLParam(r, "companyId")
 	if !IsValidUUID(companyID) {
 		respondError(w, http.StatusBadRequest, "invalid company_id")
+		return
+	}
+	if !RequireCompanyAccess(w, r, companyID) {
 		return
 	}
 
@@ -657,6 +678,22 @@ func (h *OnboardingHandler) ResolveFinding(w http.ResponseWriter, r *http.Reques
 	}
 	if req.FindingID == "" {
 		respondError(w, http.StatusBadRequest, "findingId required")
+		return
+	}
+
+	// Scope check: resolve the finding's owning company before mutating it.
+	var finding models.ValidationFinding
+	findErr := h.db.Collection("onboarding_findings").FindOne(r.Context(), bson.M{"_id": req.FindingID}).Decode(&finding)
+	if findErr == mongo.ErrNoDocuments {
+		respondError(w, http.StatusNotFound, "finding not found")
+		return
+	}
+	if findErr != nil {
+		log.Printf("[onboarding] ResolveFinding lookup error: %v", findErr)
+		respondError(w, http.StatusInternalServerError, "resolve failed")
+		return
+	}
+	if !RequireCompanyAccess(w, r, finding.CompanyID) {
 		return
 	}
 
@@ -702,6 +739,9 @@ func (h *OnboardingHandler) AdvanceStage(w http.ResponseWriter, r *http.Request)
 	}
 	if session == nil {
 		respondError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if !RequireCompanyAccess(w, r, session.CompanyID) {
 		return
 	}
 
@@ -776,6 +816,9 @@ func (h *OnboardingHandler) PauseSession(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusNotFound, "session not found")
 		return
 	}
+	if !RequireCompanyAccess(w, r, session.CompanyID) {
+		return
+	}
 
 	if session.Status != "in_progress" {
 		respondError(w, http.StatusBadRequest, fmt.Sprintf("cannot pause a session with status: %s", session.Status))
@@ -813,6 +856,9 @@ func (h *OnboardingHandler) ResumeSession(w http.ResponseWriter, r *http.Request
 	}
 	if session == nil {
 		respondError(w, http.StatusNotFound, "session not found")
+		return
+	}
+	if !RequireCompanyAccess(w, r, session.CompanyID) {
 		return
 	}
 

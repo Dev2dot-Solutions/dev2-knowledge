@@ -38,6 +38,9 @@ func (h *KnowledgeHandler) Search(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "query and companyId are required")
 		return
 	}
+	if !RequireCompanyAccess(w, r, companyID) {
+		return
+	}
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 	if limit <= 0 { limit = 5 }
 
@@ -77,6 +80,9 @@ func (h *KnowledgeHandler) FuzzySearch(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "query and companyId required")
 		return
 	}
+	if !RequireCompanyAccess(w, r, body.CompanyID) {
+		return
+	}
 	if len(body.Types) == 0 {
 		for _, t := range models.DefaultSearchTypes {
 			body.Types = append(body.Types, string(t))
@@ -112,6 +118,9 @@ func (h *KnowledgeHandler) ListEntities(w http.ResponseWriter, r *http.Request) 
 	companyID := r.URL.Query().Get("companyId")
 	if !isListableEntityType(entityType) || !IsValidUUID(companyID) {
 		respondError(w, http.StatusBadRequest, "valid type and companyId are required")
+		return
+	}
+	if !RequireCompanyAccess(w, r, companyID) {
 		return
 	}
 
@@ -157,6 +166,11 @@ func (h *KnowledgeHandler) GetEntity(w http.ResponseWriter, r *http.Request) {
 		respondError(w, http.StatusBadRequest, "valid type, id and companyId are required")
 		return
 	}
+	// companyId is optional for company-agnostic (global) entity types; scope
+	// it whenever one is supplied.
+	if companyID != "" && !RequireCompanyAccess(w, r, companyID) {
+		return
+	}
 	result, err := h.entityRepo.GetByIDForCompany(r.Context(), entityType, id, companyID)
 	if err != nil {
 		respondError(w, http.StatusInternalServerError, "lookup failed")
@@ -175,6 +189,11 @@ func (h *KnowledgeHandler) TraceEntity(w http.ResponseWriter, r *http.Request) {
 	companyID := r.URL.Query().Get("companyId")
 	if !isKnownEntityType(entityType) || !IsValidUUID(id) || !validCompanyScope(entityType, companyID) {
 		respondError(w, http.StatusBadRequest, "valid type, id and companyId are required")
+		return
+	}
+	// companyId is optional for company-agnostic (global) entity types; scope
+	// it whenever one is supplied.
+	if companyID != "" && !RequireCompanyAccess(w, r, companyID) {
 		return
 	}
 	result, err := h.entityRepo.GetByIDForCompany(r.Context(), entityType, id, companyID)

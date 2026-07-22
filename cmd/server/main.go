@@ -54,7 +54,7 @@ func main() {
 	var nc *nats.Conn
 	var natsHandler *kh.Handler
 	if ncConn, err := nats.Connect(cfg.NATSURL); err != nil {
-		log.Printf("NATS not available — continuing without: %v", cfg.NATSURL, err)
+		log.Printf("NATS not available (%s) — continuing without: %v", cfg.NATSURL, err)
 		natsHandler, _ = kh.NewHandler(nil, entityRepo, pipeline, docPipeline)
 	} else {
 		nc = ncConn

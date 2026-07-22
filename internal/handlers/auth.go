@@ -236,10 +236,16 @@ func AuthMiddleware(next http.Handler) http.Handler {
 			return
 		}
 
-		// Extract claims
-		sub, _ := claims["sub"].(string)
-		email, _ := claims["email"].(string)
-		name, _ := claims["name"].(string)
+	// Extract claims
+	sub, _ := claims["sub"].(string)
+	email, _ := claims["email"].(string)
+	name, _ := claims["name"].(string)
+
+	// Company claim — accept both camelCase and snake_case (mirrors dev2-chat).
+	companyID, _ := claims["companyId"].(string)
+	if companyID == "" {
+		companyID, _ = claims["company_id"].(string)
+	}
 
 		// Check admin group
 		isAdmin := false
@@ -255,10 +261,11 @@ func AuthMiddleware(next http.Handler) http.Handler {
 		// Set claims on context
 		ctx := context.WithValue(r.Context(), ContextUserID, sub)
 		ctx = context.WithValue(ctx, ContextUserEmail, email)
-		ctx = context.WithValue(ctx, ContextUserName, name)
-		ctx = context.WithValue(ctx, ContextIsAdmin, isAdmin)
+	ctx = context.WithValue(ctx, ContextUserName, name)
+	ctx = context.WithValue(ctx, ContextIsAdmin, isAdmin)
+	ctx = context.WithValue(ctx, ContextCompanyID, companyID)
 
-		next.ServeHTTP(w, r.WithContext(ctx))
+	next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
 
@@ -276,4 +283,32 @@ func GetIsAdmin(r *http.Request) bool {
 		return v
 	}
 	return false
+}
+
+// GetCompanyID extracts the company ID from the request context.
+// Empty for API-key callers and JWTs without a companyId/company_id claim.
+func GetCompanyID(r *http.Request) string {
+	if v, ok := r.Context().Value(ContextCompanyID).(string); ok {
+		return v
+	}
+	return ""
+}
+
+// RequireCompanyAccess enforces company scoping on a companyId-bearing
+// endpoint (DEV2-146). API-key callers and dev2-admins — both flagged admin
+// by AuthMiddleware — are unrestricted. Any other caller's JWT companyId
+// claim must equal the requested companyID. Returns false after writing a
+// 403 when access is denied.
+func RequireCompanyAccess(w http.ResponseWriter, r *http.Request, companyID string) bool {
+	if GetIsAdmin(r) {
+		return true
+	}
+	claim := GetCompanyID(r)
+	if companyID == "" || claim == "" || claim != companyID {
+		log.Printf("[authz] 403 company scope denied: %s %s (user=%s claimCompany=%s requestedCompany=%s)",
+			r.Method, r.URL.Path, GetUserID(r), claim, companyID)
+		respondError(w, http.StatusForbidden, "access denied for this company")
+		return false
+	}
+	return true
 }
